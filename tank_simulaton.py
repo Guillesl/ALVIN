@@ -1,6 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
+from bokeh.io import show
+from bokeh.plotting import figure
+
 L = 1
 n = 100
 dx = L/n
@@ -38,7 +41,24 @@ for j in range(1, len(t)):
         A[i] = k_eff*(T[i+1]-2*T[i]+T[i-1])/dx**2
         B[i] = air_rock*pCp_eff*u*(T[i+1]-T[i])/dx
         dTdt[i] = (-B[i]+A[i]+Q_losses[i])/pCp_eff
-    dTdt[0] = ((dx/k_eff*T_in+T[1]/m_aire/Cp_aire) - T[0])/dt
+    #dTdt[0] = ((dx/k_eff*T_in+T[1]/m_aire/Cp_aire) - T[0])/dt
+    dTdt[0] = T_in
     dTdt[n] = - Coef_losses*(T[n-1]-T_ext)/pCp_eff
     T = T + dTdt*dt
+    # plt.figure(1)
+    # plt.plot(x, T)
+    # plt.axis([0, L, 0, 600])
+    # plt.xlabel('Distance(m)')
+    # plt.ylabel('Temperature(ºC)')
+    # plt.show()
+    # plt.pause(0.02)
+    # plt.close('all')
+    
+# create a new plot (with a title) using figure
+    p = figure(width=400, height=400, title="My Line Plot")
 
+# add a line renderer
+    p.line(x, T, line_width=2)
+
+    if j%300 == 0 or j == 1:
+        show(p) # show the results
