@@ -8,7 +8,7 @@ L = 0.5
 n = 100
 dx = L/n
 dt = 0.1
-t_final = 9000
+t_final = 12000
 
 Coef_losses = 1.283
 k_eff = 1.375
@@ -37,13 +37,15 @@ dTdtlen = len(dTdt)
 tlen = len(t)
 
 for j in range(1, len(t)):
-    # if j<3000:
-    #     T[0] = T_in
-    # if 2999 < j <6000:
-    #     u = 0
-    # else:
-    #     T = list(reversed(T))
-    #     T[0] = T_in
+    if j<30000:
+        T[0] = T_in
+    if 29999 < j <60000:
+        u = 0
+    if j == 59999:
+        T = list(reversed(T))
+        T[0] = 60+273.5
+    if j>59999:
+        T[0] = 60+273.5
 
     for i in range(1, n):
         Q_losses[i] = + Coef_losses*(T[i]-T_ext)
@@ -55,8 +57,9 @@ for j in range(1, len(t)):
     dTdt[n] = (k_eff*(-T[n]+T[n-1])/dx**2 + Coef_losses*(T[n]-T_ext))/pCp_eff
     #dTdt[n] = 0
     T = T + dTdt*dt
-    T[0] = T_in
-    if j%3000 == 0 or j == 1:
+    
+    # if j%12000 == 0 or j == 1:
+    if j%6000 == 0 and j>59999:
         plt.figure(1)
         plt.plot(x, T)
         plt.axis([0, L, 273.5, 500])
