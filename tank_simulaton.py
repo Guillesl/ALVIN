@@ -58,8 +58,8 @@ for j in range(1, len(t)):
     #dTdt[n] = 0
     T = T + dTdt*dt
     
-    # if j%12000 == 0 or j == 1:
-    if j%6000 == 0 and j>59999:
+    if j%12000 == 0 or j == 1:
+    # if j%6000 == 0 and j>59999: #Descarga
         plt.figure(1)
         plt.plot(x, T)
         plt.axis([0, L, 273.5, 500])
