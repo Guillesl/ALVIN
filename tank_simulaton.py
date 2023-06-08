@@ -9,7 +9,7 @@ from bokeh.layouts import column
 
 '''Datos del tanque'''
 
-L = 2                   # m
+L = 0.5                   # m
 D = 0.95                # m
 V = np.pi*(D/2)**2*L    # m3
 
@@ -51,24 +51,25 @@ Coef_losses = h_th*A_ext/V_tot         # W/m3K
 
 '''Configuración de la simulación'''
 
-n = 300
+n = 100
 dx = L/n
 dt = 0.15
-t_final = 28800     # s
+t_final = 35800     # s
 t_standby = 3600    # s
 
 k_eff = air_rock*k_aire + (1-air_rock)*k_roca + V_wall/V*k_wall     # W/mK
-u = Q_aire/(p_aire*air_rock*np.pi*(D/2)**2)                       # m/s
+u = Q_aire/(p_aire*air_rock*np.pi*(D/2)**2)                         # m/s
 
 pCp_air = Cp_aire * p_aire      # J/m3K
 pCp_rock = Cp_roca * p_roca     # J/m3K
 pCp_wall = Cp_wall * p_wall     # J/m3K
 pCp_eff = air_rock*pCp_air + (1 - air_rock) * pCp_rock + V_wall/V * pCp_wall     # J/m3K
 
-T_in_charge = 273.5 + 170              # K
+T_in_charge = 273.5 + 170       # K
 T0 = 273.5 + 60                 # K
-T_goal = 273.5 + 100            # K
+T_goal_charge = 273.5 + 100     # K
 T_in_discharge = 273.5 + 60     # K
+T_goal_discharge = 273.5 + 80   # K
 
 
 '''SIMULACIÓN'''
@@ -85,34 +86,64 @@ xlen = len(x)
 Tlen = len(T)
 dTdtlen = len(dTdt)
 tlen = len(t)
-mode = "charge"
 count_standby = 0
 
-for j in range(1, len(t)):
-    if T[-1] < T_goal and mode == "charge":
+def temp_field (T, mode, s):
+    global tlen, u
+    if mode == "charge":
+        vel = u
         T[0] = T_in_charge
-    else:
-        mode = "standby"
-    if count_standby < t_standby and mode == "standby":
-        u = 0
-        count_standby += 1*dt
-    if count_standby == t_standby:
-            mode = "discharge"
-            T = list(reversed(T))
-            T[0] = T_in_discharge
+    if mode == "standby":
+        vel = 0
+        tlen = s + int(t_standby/dt)
+    if mode == "discharge":
+        T = list(reversed(T))
+        vel= u
+        T[0] = T_in_discharge
+        tlen = len(t)
+    for j in range(s, tlen):
+        for i in range(1, n):
+            Q_losses[i] = + Coef_losses*(T[i]-T_ext)
+            A[i] = k_eff*(T[i+1]-2*T[i]+T[i-1])/dx**2
+            B[i] = air_rock*pCp_air*vel*(T[i+1]-T[i])/dx
+            dTdt[i] = (-B[i]+A[i]+Q_losses[i])/pCp_eff
+        # dTdt[0] = ((dx/k_eff*T_in+T[1]/m_aire/Cp_aire) - T[0])/dt
+        dTdt[0] = 0
+        dTdt[n] = (k_eff*(-T[n]+T[n-1])/dx**2 + Coef_losses*(T[n]-T_ext))/pCp_eff
+        #dTdt[n] = 0
+        T = T + dTdt*dt
+        
+        if mode == "charge" and T[-1] >= T_goal_charge:
+            tim = str(round((j - s)*dt, 2))
+            hour = str(round((j - s)*dt/3600, 2))
+            print ("El tiempo de carga ha sido de " + tim + " segundos, o de " + hour + " horas")
+            break
+        if mode == "discharge" and T[-1] <= T_goal_discharge:
+            tim = str(round((j - s)*dt, 2))
+            hour = str(round((j - s)*dt/3600, 2))
+            print ("El tiempo de descarga ha sido de " + tim + " segundos, o de " + hour + " horas")
+            break
 
-    for i in range(1, n):
-        Q_losses[i] = + Coef_losses*(T[i]-T_ext)
-        A[i] = k_eff*(T[i+1]-2*T[i]+T[i-1])/dx**2
-        B[i] = air_rock*pCp_air*u*(T[i+1]-T[i])/dx
-        dTdt[i] = (-B[i]+A[i]+Q_losses[i])/pCp_eff
-    # dTdt[0] = ((dx/k_eff*T_in+T[1]/m_aire/Cp_aire) - T[0])/dt
-    dTdt[0] = 0
-    dTdt[n] = (k_eff*(-T[n]+T[n-1])/dx**2 + Coef_losses*(T[n]-T_ext))/pCp_eff
-    #dTdt[n] = 0
-    T = T + dTdt*dt
+    return [T, j]
+
+def plot():
+    plt.figure(1)
+    plt.plot(x, T)
+    plt.axis([0, L, 273.5, 500])
+    plt.xlabel('Distance(m)')
+    plt.ylabel('Temperature(K)')
+    plt.show()
+    # plt.pause(0.02)
+    # plt.clf()
+
+[T, s] = temp_field(T, "charge", 1)
+plot()
+[T, s] = temp_field(T, "standby", s)
+plot()
+[T, j] = temp_field(T, "discharge", s)
+plot()
     
-    '''GRÁFICAS'''
+'''GRÁFICAS'''
 
     # p = figure(x_range=(0, L), y_range=(273.5, 500), x_axis_label='Distance(m)', y_axis_label='Temperature(K)')
     # line = p.line(x, T)
@@ -122,15 +153,4 @@ for j in range(1, len(t)):
     # if j % 300 == 0 or j == 1:
     #     line.data_source.data['y'] = T
     #     time.sleep(10)
-    #     curdoc().title = "Temperature Plot"
-
-    if j%40000 == 0:
-        plt.figure(1)
-        plt.plot(x, T)
-        plt.axis([0, L, 273.5, 500])
-        plt.xlabel('Distance(m)')
-        plt.ylabel('Temperature(K)')
-        plt.show()
-        plt.pause(0.02)
-        plt.clf()
-    
+    #     curdoc().title = "Temperature Plot"    
