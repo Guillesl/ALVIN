@@ -1,6 +1,5 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import time
 
 from bokeh.io import curdoc, show
 from bokeh.models import Range1d
@@ -9,7 +8,7 @@ from bokeh.layouts import column
 
 '''Datos del tanque'''
 
-L = 0.5                   # m
+L = 2                   # m
 D = 0.95                # m
 V = np.pi*(D/2)**2*L    # m3
 
@@ -51,11 +50,12 @@ Coef_losses = h_th*A_ext/V_tot         # W/m3K
 
 '''Configuración de la simulación'''
 
-n = 100
+n = 400
 dx = L/n
 dt = 0.15
 t_final = 35800     # s
-t_standby = 3600    # s
+t_standby = 7200    # s
+last_min = 0        # s
 
 k_eff = air_rock*k_aire + (1-air_rock)*k_roca + V_wall/V*k_wall     # W/mK
 u = Q_aire/(p_aire*air_rock*np.pi*(D/2)**2)                         # m/s
@@ -67,7 +67,7 @@ pCp_eff = air_rock*pCp_air + (1 - air_rock) * pCp_rock + V_wall/V * pCp_wall    
 
 T_in_charge = 273.5 + 170       # K
 T0 = 273.5 + 60                 # K
-T_goal_charge = 273.5 + 100     # K
+T_goal_charge = 273.5 + 70     # K
 T_in_discharge = 273.5 + 60     # K
 T_goal_discharge = 273.5 + 80   # K
 
@@ -88,8 +88,40 @@ dTdtlen = len(dTdt)
 tlen = len(t)
 count_standby = 0
 
+def celsius(T):
+    T_celsius = [temp - 273.15 for temp in T]
+    return T_celsius
+
+def plot(x, T, mode, minute):
+    global last_min, last_T
+    index = 0
+    plt.figure(figsize=(6, 4), layout='constrained')
+    if mode == "discharge":
+        x_plot = x
+        x_last_plot = list(reversed(x))
+        plt.plot(x_last_plot, last_T, label = str(last_min) + " min")
+    else:
+        x_plot = list(reversed(x))
+    if mode == "standby":
+        plt.plot(x_plot, last_T, label = str(last_min) + " min")
+    for i in T:
+        minute_plot = round(minute[index], 1)
+        plt.plot(x_plot, i, label = str(minute_plot) + " min")
+        index += 1
+    plt.axis([L, 0, 0, 220])
+    plt.xlabel('Height of the tank (m)')
+    plt.ylabel('Temperature (ºC)')
+    duration = round(minute[-1]-last_min, 2)
+    plt.title("Mode: "+ mode + ", duration: " + str(duration) + " min")
+    plt.legend(loc = 'lower left')
+    plt.show()
+    last_T = T[-1]
+    last_min = round(minute[-1], 1)
+
 def temp_field (T, mode, s):
     global tlen, u
+    my_Tplot = []
+    my_timeplot = []
     if mode == "charge":
         vel = u
         T[0] = T_in_charge
@@ -107,41 +139,35 @@ def temp_field (T, mode, s):
             A[i] = k_eff*(T[i+1]-2*T[i]+T[i-1])/dx**2
             B[i] = air_rock*pCp_air*vel*(T[i+1]-T[i])/dx
             dTdt[i] = (-B[i]+A[i]+Q_losses[i])/pCp_eff
-        # dTdt[0] = ((dx/k_eff*T_in+T[1]/m_aire/Cp_aire) - T[0])/dt
+        # dTdt[0] = ((dx/k_eff*T_in+T[1]/m_aire/Cp_aire) - T[0])/dt    NECESARIO PARA QUE HAGA EFECTO LAS PÉRDIDAS TÉRMICAS
         dTdt[0] = 0
         dTdt[n] = (k_eff*(-T[n]+T[n-1])/dx**2 + Coef_losses*(T[n]-T_ext))/pCp_eff
         #dTdt[n] = 0
         T = T + dTdt*dt
         
+        if j%16000 == 0:
+            my_Tplot.append(celsius(T))
+            my_timeplot.append(j*dt/60)
+
         if mode == "charge" and T[-1] >= T_goal_charge:
-            tim = str(round((j - s)*dt, 2))
-            hour = str(round((j - s)*dt/3600, 2))
-            print ("El tiempo de carga ha sido de " + tim + " segundos, o de " + hour + " horas")
             break
         if mode == "discharge" and T[-1] <= T_goal_discharge:
-            tim = str(round((j - s)*dt, 2))
-            hour = str(round((j - s)*dt/3600, 2))
-            print ("El tiempo de descarga ha sido de " + tim + " segundos, o de " + hour + " horas")
             break
+    tim = str(round((j - s)*dt, 2))
+    hour = str(round((j - s)*dt/3600, 2))
+    my_Tplot.append(celsius(T))
+    my_timeplot.append(j*dt/60)
+    print ("El tiempo de " + mode + " ha sido de " + tim + " segundos, o de " + hour + " horas")
 
-    return [T, j]
+    return [T, j, my_Tplot, my_timeplot]
 
-def plot():
-    plt.figure(1)
-    plt.plot(x, T)
-    plt.axis([0, L, 273.5, 500])
-    plt.xlabel('Distance(m)')
-    plt.ylabel('Temperature(K)')
-    plt.show()
-    # plt.pause(0.02)
-    # plt.clf()
 
-[T, s] = temp_field(T, "charge", 1)
-plot()
-[T, s] = temp_field(T, "standby", s)
-plot()
-[T, j] = temp_field(T, "discharge", s)
-plot()
+[T, s, my_Tplot, my_timeplot] = temp_field(T, "charge", 0)
+plot_charge = plot(x, my_Tplot, "charge", my_timeplot)
+[T, s, my_Tplot, my_timeplot] = temp_field(T, "standby", s)
+plot_standby = plot(x, my_Tplot, "standby", my_timeplot)
+[T, j, my_Tplot, my_timeplot] = temp_field(T, "discharge", s)
+plot_discharge = plot(x, my_Tplot, "discharge", my_timeplot)
     
 '''GRÁFICAS'''
 
