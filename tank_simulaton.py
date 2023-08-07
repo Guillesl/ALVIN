@@ -8,7 +8,7 @@ from bokeh.layouts import column
 
 '''Datos del tanque'''
 
-L = 2                   # m
+L = 1                   # m
 D = 0.95                # m
 V = np.pi*(D/2)**2*L    # m3
 
