@@ -1,26 +1,38 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import pandas as pd
 
 from bokeh.io import curdoc, show
 from bokeh.models import Range1d
 from bokeh.plotting import figure
 from bokeh.layouts import column
 
+
+csv_file_path = 'Piloto_potencia_solar_v2.csv'
+column_name = 'Potencia_kW'
+
+data_frame = pd.read_csv(csv_file_path)
+
+selected_column = data_frame[column_name]
+potencia_solar = selected_column.tolist()
+potencia_solar.pop(0)
+
+
 '''Datos del tanque'''
 
-L = 1                   # m
+L = 2                   # m
 D = 0.95                # m
 V = np.pi*(D/2)**2*L    # m3
 
 air_rock = 0.35         
 Cp_roca = 1085          # J/kgK
 p_roca = 2400           # kg/m3
-k_roca = 1.7            # W/mK
+k_roca = 0.96           # W/mK
 
 Cp_aire = 1016          # J/kgK
 p_aire = 0.8148         # kg/m3
 k_aire = 0.03511        # W/mK
-Q_aire = 0.2            # kg/s
+Q_aire = 0.15            # kg/s
 
 Cp_wall = 500           # J/kgK
 p_wall = 8000           # kg/m3
@@ -52,7 +64,8 @@ Coef_losses = h_th*A_ext/V_tot         # W/m3K
 
 n = 400
 dx = L/n
-dt = 0.15
+dt = 1              # Use dt multiples of 60, ex: 0.25, 0.5, 1, 2, 5, 10, not 7
+potencia_solar = [item for item in potencia_solar for _ in range(int(60/dt))] # The file timestep is 60 seconds
 t_final = 35800     # s
 t_standby = 7200    # s
 last_min = 0        # s
@@ -65,7 +78,7 @@ pCp_rock = Cp_roca * p_roca     # J/m3K
 pCp_wall = Cp_wall * p_wall     # J/m3K
 pCp_eff = air_rock*pCp_air + (1 - air_rock) * pCp_rock + V_wall/V * pCp_wall     # J/m3K
 
-T_in_charge = 273.5 + 170       # K
+# T_in_charge = 273.5 + 170       # K
 T0 = 273.5 + 60                 # K
 T_goal_charge = 273.5 + 70     # K
 T_in_discharge = 273.5 + 60     # K
@@ -118,22 +131,50 @@ def plot(x, T, mode, minute):
     last_T = T[-1]
     last_min = round(minute[-1], 1)
 
+# Plot the calculated initial temperatures and controlled air flow
+def plot_temp_flow(T_iniciales, Q_aire_dia):
+    plt.plot(T_iniciales)
+    plt.xlabel('Minute of the day')
+    plt.ylabel('Initial Temperature (ºC)')
+    plt.title('Inlet temperature to tank, fixed air flow 0.25 kg/s')
+    plt.grid(True)
+    plt.show()
+
+    plt.plot(Q_aire_dia)
+    plt.xlabel('Minute of the day')
+    plt.ylabel('Initial Temperature (K)')
+    plt.title('Air flow for inlet temp 170ºC')
+    plt.grid(True)
+    plt.show()
+
 def temp_field (T, mode, s):
     global tlen, u
+    T_in_design= 170 + 273.5
+    T_iniciales = []
+    Q_aire_dia = []
     my_Tplot = []
     my_timeplot = []
     if mode == "charge":
         vel = u
-        T[0] = T_in_charge
+        # T[0] = T_in_charge
     if mode == "standby":
         vel = 0
         tlen = s + int(t_standby/dt)
-    if mode == "discharge":
-        T = list(reversed(T))
-        vel= u
-        T[0] = T_in_discharge
-        tlen = len(t)
+    # if mode == "discharge":
+    #     T = list(reversed(T))
+    #     vel= u
+    #     T[0] = T_in_discharge
+    #     tlen = len(t)
     for j in range(s, tlen):
+
+        if mode != "standby":
+            T[0] = potencia_solar[j]*1000/(Q_aire*Cp_aire)+T[-1]
+            if T[0] >= T_in_design:
+                T[0] = T_in_design
+            Q_aire_control = potencia_solar[j]*1000/((T_in_design - T[-1])*Cp_aire)
+            T_iniciales.append(T[0])
+            Q_aire_dia.append(Q_aire_control)
+
         for i in range(1, n):
             Q_losses[i] = + Coef_losses*(T[i]-T_ext)
             A[i] = k_eff*(T[i+1]-2*T[i]+T[i-1])/dx**2
@@ -145,38 +186,29 @@ def temp_field (T, mode, s):
         #dTdt[n] = 0
         T = T + dTdt*dt
         
-        if j%16000 == 0:
+        if j%2000 == 0:
             my_Tplot.append(celsius(T))
             my_timeplot.append(j*dt/60)
 
         if mode == "charge" and T[-1] >= T_goal_charge:
             break
-        if mode == "discharge" and T[-1] <= T_goal_discharge:
-            break
+        # if mode == "discharge" and T[-1] <= T_goal_discharge:
+        #     break
     tim = str(round((j - s)*dt, 2))
     hour = str(round((j - s)*dt/3600, 2))
     my_Tplot.append(celsius(T))
     my_timeplot.append(j*dt/60)
     print ("El tiempo de " + mode + " ha sido de " + tim + " segundos, o de " + hour + " horas")
 
-    return [T, j, my_Tplot, my_timeplot]
+    return [T, j, my_Tplot, my_timeplot, T_iniciales, Q_aire_dia]
 
 
-[T, s, my_Tplot, my_timeplot] = temp_field(T, "charge", 0)
+[T, s, my_Tplot, my_timeplot, T_iniciales, Q_aire_dia] = temp_field(T, "charge", 0)
 plot_charge = plot(x, my_Tplot, "charge", my_timeplot)
-[T, s, my_Tplot, my_timeplot] = temp_field(T, "standby", s)
+plot_temp_flow_charge = plot_temp_flow(T_iniciales, Q_aire_dia)
+[T, s, my_Tplot, my_timeplot, T_iniciales, Q_aire_dia] = temp_field(T, "standby", s)
 plot_standby = plot(x, my_Tplot, "standby", my_timeplot)
-[T, j, my_Tplot, my_timeplot] = temp_field(T, "discharge", s)
-plot_discharge = plot(x, my_Tplot, "discharge", my_timeplot)
+# [T, j, my_Tplot, my_timeplot, T_iniciales, Q_aire_dia] = temp_field(T, "discharge", s)
+# plot_discharge = plot(x, my_Tplot, "discharge", my_timeplot)
+# plot_temp_flow_standby = plot_temp_flow(T_iniciales, Q_aire_dia)
     
-'''GRÁFICAS'''
-
-    # p = figure(x_range=(0, L), y_range=(273.5, 500), x_axis_label='Distance(m)', y_axis_label='Temperature(K)')
-    # line = p.line(x, T)
-    # layout = column(p)
-    # show (layout, browser= 'firefox', notebook_handle=True)
-
-    # if j % 300 == 0 or j == 1:
-    #     line.data_source.data['y'] = T
-    #     time.sleep(10)
-    #     curdoc().title = "Temperature Plot"    

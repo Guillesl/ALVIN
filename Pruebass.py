@@ -13,7 +13,8 @@ potencia_solar.pop(0)
 T_out_tank = 60
 Q_aire = 0.25
 Cp_aire = 1008
-T_in_design = 170
+T_in_design= 170
+
 T_iniciales = []
 Q_aire_dia = []
 
