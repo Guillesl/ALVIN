@@ -20,7 +20,7 @@ potencia_solar.pop(0)
 
 '''Datos del tanque'''
 
-L = 2                   # m
+L = 1                   # m
 D = 0.95                # m
 V = np.pi*(D/2)**2*L    # m3
 
@@ -32,7 +32,7 @@ k_roca = 0.96           # W/mK
 Cp_aire = 1016          # J/kgK
 p_aire = 0.8148         # kg/m3
 k_aire = 0.03511        # W/mK
-Q_aire = 0.15            # kg/s
+Q_aire = 0.12           # kg/s
 
 Cp_wall = 500           # J/kgK
 p_wall = 8000           # kg/m3
@@ -62,7 +62,7 @@ Coef_losses = h_th*A_ext/V_tot         # W/m3K
 
 '''Configuración de la simulación'''
 
-n = 400
+n = 200
 dx = L/n
 dt = 1              # Use dt multiples of 60, ex: 0.25, 0.5, 1, 2, 5, 10, not 7
 potencia_solar = [item for item in potencia_solar for _ in range(int(60/dt))] # The file timestep is 60 seconds
@@ -131,8 +131,8 @@ def plot(x, T, mode, minute):
     last_T = T[-1]
     last_min = round(minute[-1], 1)
 
-# Plot the calculated initial temperatures and controlled air flow
-def plot_temp_flow(T_iniciales, Q_aire_dia):
+# Ploting energy accumulated, lost, air flow and T_in
+def plot_temp_flow(T_iniciales, Q_aire_dia, Stored_energy_acc, Storage_power_acc, Lost_power_acc, Lost_energy_acc):
     plt.plot(T_iniciales)
     plt.xlabel('Minute of the day')
     plt.ylabel('Initial Temperature (ºC)')
@@ -142,18 +142,47 @@ def plot_temp_flow(T_iniciales, Q_aire_dia):
 
     plt.plot(Q_aire_dia)
     plt.xlabel('Minute of the day')
-    plt.ylabel('Initial Temperature (K)')
+    plt.ylabel('Air flow kg/s')
     plt.title('Air flow for inlet temp 170ºC')
+    plt.grid(True)
+    plt.show()
+
+    plt.plot(Lost_energy_acc, label='Lost Energy')
+    plt.plot(Stored_energy_acc, label='Stored Energy')
+    plt.xlabel('Minute of the day')
+    plt.ylabel('Energy (kWh)')
+    plt.title('Lost and Stored Energy')
+    plt.legend()
+    plt.grid(True)
+    plt.text(0, 22, 'Stored energy: ' + str(round(Stored_energy_acc[-1], 2)) + ' kWh', fontsize=10)
+    plt.text(0, 20, 'Lost energy: ' + str(round(Lost_energy_acc[-1], 2)) + ' kWh', fontsize=10)
+    plt.show()
+
+    plt.plot(Lost_power_acc, label='Lost power')
+    plt.plot(Storage_power_acc, label='Storage power')
+    plt.xlabel('Minute of the day')
+    plt.ylabel('Power (kW)')
+    plt.title('Lost and Stored Energy')
+    plt.legend()
     plt.grid(True)
     plt.show()
 
 def temp_field (T, mode, s):
     global tlen, u
     T_in_design= 170 + 273.5
+    Lost_energy = 0
+    Lost_power = 0
+    Stored_energy = 0
+    Storage_power = 0
     T_iniciales = []
     Q_aire_dia = []
     my_Tplot = []
     my_timeplot = []
+    Lost_power_acc = []
+    Lost_energy_acc = []
+    Storage_power_acc = []
+    Stored_energy_acc = []
+
     if mode == "charge":
         vel = u
         # T[0] = T_in_charge
@@ -170,10 +199,18 @@ def temp_field (T, mode, s):
         if mode != "standby":
             T[0] = potencia_solar[j]*1000/(Q_aire*Cp_aire)+T[-1]
             if T[0] >= T_in_design:
+                Lost_power = Q_aire*Cp_aire*(T[0]-T_in_design)/1000    # kW
+                Lost_energy += Lost_power*dt/3600                      # kWh
                 T[0] = T_in_design
+            Storage_power = potencia_solar[j]-Lost_power
+            Stored_energy += Storage_power*dt/3600
             Q_aire_control = potencia_solar[j]*1000/((T_in_design - T[-1])*Cp_aire)
-            T_iniciales.append(T[0])
+            T_iniciales.append(T[0]-273.15)
             Q_aire_dia.append(Q_aire_control)
+            Lost_power_acc.append(Lost_power)
+            Lost_energy_acc.append(Lost_energy)
+            Storage_power_acc.append(Storage_power)
+            Stored_energy_acc.append(Stored_energy)
 
         for i in range(1, n):
             Q_losses[i] = + Coef_losses*(T[i]-T_ext)
@@ -186,7 +223,7 @@ def temp_field (T, mode, s):
         #dTdt[n] = 0
         T = T + dTdt*dt
         
-        if j%2000 == 0:
+        if j%4000 == 0:
             my_Tplot.append(celsius(T))
             my_timeplot.append(j*dt/60)
 
@@ -200,13 +237,13 @@ def temp_field (T, mode, s):
     my_timeplot.append(j*dt/60)
     print ("El tiempo de " + mode + " ha sido de " + tim + " segundos, o de " + hour + " horas")
 
-    return [T, j, my_Tplot, my_timeplot, T_iniciales, Q_aire_dia]
+    return [T, j, my_Tplot, my_timeplot, T_iniciales, Q_aire_dia, Stored_energy_acc, Storage_power_acc, Lost_power_acc, Lost_energy_acc]
 
 
-[T, s, my_Tplot, my_timeplot, T_iniciales, Q_aire_dia] = temp_field(T, "charge", 0)
+[T, s, my_Tplot, my_timeplot, T_iniciales, Q_aire_dia, Stored_energy_acc, Storage_power_acc, Lost_power_acc, Lost_energy_acc] = temp_field(T, "charge", 0)
 plot_charge = plot(x, my_Tplot, "charge", my_timeplot)
-plot_temp_flow_charge = plot_temp_flow(T_iniciales, Q_aire_dia)
-[T, s, my_Tplot, my_timeplot, T_iniciales, Q_aire_dia] = temp_field(T, "standby", s)
+plot_temp_flow_charge = plot_temp_flow(T_iniciales, Q_aire_dia, Stored_energy_acc, Storage_power_acc, Lost_power_acc, Lost_energy_acc)
+[T, s, my_Tplot, my_timeplot, T_iniciales, Q_aire_dia, Stored_energy_acc, Storage_power_acc, Lost_power_acc, Lost_energy_acc] = temp_field(T, "standby", s)
 plot_standby = plot(x, my_Tplot, "standby", my_timeplot)
 # [T, j, my_Tplot, my_timeplot, T_iniciales, Q_aire_dia] = temp_field(T, "discharge", s)
 # plot_discharge = plot(x, my_Tplot, "discharge", my_timeplot)
